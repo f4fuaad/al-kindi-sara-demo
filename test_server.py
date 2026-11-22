@@ -51,10 +51,21 @@ def test_health():
 def test_twiml():
     r = client.get("/twiml")
     assert r.status_code == 200, r.text
-    # /twiml now serves the language menu (Gather), not the relay itself.
+    # /twiml is step 1 only: a plain greeting + Redirect to /language-menu.
+    # It must NOT contain a Gather — the trial-message dismiss keypress
+    # must not be swallowable as a menu answer (2026-11-22 bug).
+    assert "<Gather" not in r.text, r.text
+    assert "Thank you for calling Al Kindi" in r.text
+    assert "/language-menu" in r.text
+    print("PASS  twiml returns greeting + redirect to /language-menu (no Gather)")
+
+
+def test_language_menu():
+    r = client.get("/language-menu")
+    assert r.status_code == 200, r.text
     assert "<Gather" in r.text
     assert "press 1" in r.text.lower() and "press 2" in r.text.lower()
-    print("PASS  twiml returns language menu (Gather: press 1 English, 2 Arabic)")
+    print("PASS  language-menu returns Gather: press 1 English, 2 Arabic")
 
 
 def test_choose_language():
@@ -130,10 +141,11 @@ if __name__ == "__main__":
     try:
         test_health()
         test_twiml()
+        test_language_menu()
         test_choose_language()
         test_websocket_booking_flow()
         test_websocket_arabic_flow()
     except AssertionError as e:
         print("FAIL:", e)
         sys.exit(1)
-    print("\nAll 5 tests passed (mock mode, no keys, no money spent).")
+    print("\nAll 6 tests passed (mock mode, no keys, no money spent).")

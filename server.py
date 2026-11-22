@@ -178,14 +178,39 @@ async def health():
 @app.get("/twiml", response_class=PlainTextResponse)
 @app.post("/twiml", response_class=PlainTextResponse)
 async def twiml():
-    """Language menu, then Conversation Relay.
+    """Step 1 of 2: a plain greeting, NO Gather here.
 
-    Twilio calls this when the call comes in. It asks the caller to
-    press 1 for English or 2 for Arabic, then hands the choice to
-    /choose-language, which returns the <ConversationRelay> TwiML.
-    No digit (or any other key) defaults to English.
+    Why two steps: on a trial account the caller must press a key to
+    dismiss Twilio's trial message BEFORE this TwiML is fetched, and
+    that keypress can be swallowed by a <Gather> as if it were the
+    caller's menu answer — the call then jumps straight to English
+    and the caller never hears the Arabic option (reported 2026-11-22).
+    A plain <Say> first discards any stray digit (digits pressed
+    outside a Gather are ignored), then we redirect to /language-menu
+    where the Gather starts clean.
     Note: on a trial account the caller first hears Twilio's trial
     message and must press any key before this TwiML is even fetched."""
+    host = PUBLIC_WS_URL.rsplit("/ws", 1)[0] if PUBLIC_WS_URL else ""
+    # Language-menu URL is a plain HTTPS webhook, not the wss:// socket URL.
+    host = host.replace("wss://", "https://").replace("ws://", "http://")
+    menu = f"{host}/language-menu" if host else "/language-menu"
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        "<Response>\n"
+        '  <Say language="en-US" voice="Google.en-US-Wavenet-F">Thank you for calling Al Kindi Clinics Center.</Say>\n'
+        f'  <Redirect method="POST">{menu}</Redirect>\n'
+        "</Response>\n"
+    )
+
+
+@app.get("/language-menu", response_class=PlainTextResponse)
+@app.post("/language-menu", response_class=PlainTextResponse)
+async def language_menu():
+    """Step 2 of 2: the language menu. Press 1 for English, 2 for Arabic.
+
+    Reached only via the Redirect from /twiml, so no stray digit from
+    the trial-message keypress can reach this Gather. No digit (or any
+    other key) defaults to English in /choose-language."""
     host = PUBLIC_WS_URL.rsplit("/ws", 1)[0] if PUBLIC_WS_URL else ""
     # Gather action is a plain HTTPS webhook, not the wss:// socket URL.
     host = host.replace("wss://", "https://").replace("ws://", "http://")

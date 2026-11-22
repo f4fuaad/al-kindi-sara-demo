@@ -196,8 +196,8 @@ async def twiml():
         '  <Gather numDigits="1" timeout="5" action="'
         + action
         + '" method="POST">\n'
-        '    <Say language="en-US">For English, press 1. For Arabic, press 2.</Say>\n'
-        '    <Say language="ar-SA">للغة العربية، اضغط 2. For English, press 1.</Say>\n'
+        '    <Say language="en-US" voice="Google.en-US-Wavenet-F">For English, press 1. For Arabic, press 2.</Say>\n'
+        '    <Say language="ar-SA" voice="Google.ar-XA-Wavenet-A">للغة العربية، اضغط 2. For English, press 1.</Say>\n'
         "  </Gather>\n"
         '  <Redirect method="POST">/choose-language</Redirect>\n'
         "</Response>\n"
@@ -205,7 +205,13 @@ async def twiml():
 
 
 def _relay_twiml(lang: str) -> str:
-    """<ConversationRelay> TwiML for the chosen language."""
+    """<ConversationRelay> TwiML for the chosen language.
+
+    NOTE: ttsProvider and voice MUST be set explicitly. Twilio's
+    ConversationRelay default is ElevenLabs voice UgBBYS2sOqTuMpoF3BR0,
+    which sounds male — Sara introduced herself in a man's voice until
+    this was fixed (2026-11-22). Google Wavenet-F (en-US) and
+    Wavenet-A (ar-XA) are both female voices."""
     ws_url = PUBLIC_WS_URL or "wss://REPLACE-WITH-YOUR-NGROK-DOMAIN/ws"
     if lang == "ar":
         ws_url = ws_url.split("?")[0] + "?lang=ar"
@@ -215,6 +221,7 @@ def _relay_twiml(lang: str) -> str:
             "  <Connect>\n"
             f'    <ConversationRelay url="{ws_url}" '
             'language="ar-SA" interruptible="true" '
+            'ttsProvider="Google" voice="ar-XA-Wavenet-A" '
             f'welcomeGreeting="{WELCOME_GREETING_AR}" />\n'
             "  </Connect>\n"
             "</Response>\n"
@@ -225,6 +232,7 @@ def _relay_twiml(lang: str) -> str:
         "  <Connect>\n"
         f'    <ConversationRelay url="{ws_url}" '
         'language="en-US" interruptible="true" '
+        'ttsProvider="Google" voice="en-US-Wavenet-F" '
         f'welcomeGreeting="{WELCOME_GREETING}" />\n'
         "  </Connect>\n"
         "</Response>\n"

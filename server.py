@@ -187,6 +187,8 @@ async def twiml():
     Note: on a trial account the caller first hears Twilio's trial
     message and must press any key before this TwiML is even fetched."""
     host = PUBLIC_WS_URL.rsplit("/ws", 1)[0] if PUBLIC_WS_URL else ""
+    # Gather action is a plain HTTPS webhook, not the wss:// socket URL.
+    host = host.replace("wss://", "https://").replace("ws://", "http://")
     action = f"{host}/choose-language" if host else "/choose-language"
     return (
         '<?xml version="1.0" encoding="UTF-8"?>\n'

@@ -51,10 +51,47 @@ def test_health():
 def test_twiml():
     r = client.get("/twiml")
     assert r.status_code == 200, r.text
-    assert "<ConversationRelay" in r.text
-    assert 'url="wss://' in r.text
-    assert "Al Kindi" in r.text
-    print("PASS  twiml returns <ConversationRelay> with a wss:// URL")
+    # /twiml now serves the language menu (Gather), not the relay itself.
+    assert "<Gather" in r.text
+    assert "press 1" in r.text.lower() and "press 2" in r.text.lower()
+    print("PASS  twiml returns language menu (Gather: press 1 English, 2 Arabic)")
+
+
+def test_choose_language():
+    for digits, lang in [("1", "en-US"), ("2", "ar-SA"), ("", "en-US")]:
+        r = client.post("/choose-language", data={"Digits": digits})
+        assert r.status_code == 200, r.text
+        assert "<ConversationRelay" in r.text
+        assert f'language="{lang}"' in r.text, r.text
+        assert 'url="wss://' in r.text
+    print("PASS  choose-language: 1 -> en-US, 2 -> ar-SA, none -> en-US")
+
+
+def test_websocket_arabic_flow():
+    with client.websocket_connect("/ws?lang=ar") as ws:
+        ws.send_json(
+            {
+                "type": "setup",
+                "callSid": "CAtestAr1",
+                "from": "+97455551234",
+                "to": "+14155550132",
+            }
+        )
+        ws.send_json(
+            {"type": "prompt", "voicePrompt": "أريد تنظيف أسناني، من فضلك.", "last": True}
+        )
+        tokens, saw_last = [], False
+        for _ in range(20):
+            msg = json.loads(ws.receive_text())
+            assert msg["type"] == "text", msg
+            tokens.append(msg.get("token", ""))
+            if msg.get("last"):
+                saw_last = True
+                break
+        assert saw_last, "never received a text token with last=true"
+        reply = "".join(tokens)
+        assert "الحادية عشرة" in reply and "الخامسة" in reply, reply
+        print("PASS  websocket Arabic flow — Sara replied:", reply)
 
 
 def test_websocket_booking_flow():
@@ -93,8 +130,10 @@ if __name__ == "__main__":
     try:
         test_health()
         test_twiml()
+        test_choose_language()
         test_websocket_booking_flow()
+        test_websocket_arabic_flow()
     except AssertionError as e:
         print("FAIL:", e)
         sys.exit(1)
-    print("\nAll 3 tests passed (mock mode, no keys, no money spent).")
+    print("\nAll 5 tests passed (mock mode, no keys, no money spent).")

@@ -32,10 +32,15 @@ import os
 from typing import Any, Optional
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Form, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import PlainTextResponse
 
-from system_prompt import SARA_SYSTEM_PROMPT, WELCOME_GREETING
+from system_prompt import (
+    SARA_SYSTEM_PROMPT,
+    SARA_SYSTEM_PROMPT_AR,
+    WELCOME_GREETING,
+    WELCOME_GREETING_AR,
+)
 
 load_dotenv()
 
@@ -94,9 +99,22 @@ app = FastAPI(title="Al Kindi — Sara voice booking demo (Twilio + DeepSeek)")
 
 
 # --- Mock replies (no-key testing only) -------------------------------------
-def mock_reply(user_text: str, history: list) -> str:
+def mock_reply(user_text: str, history: list, lang: str = "en") -> str:
     """Canned reply that follows the recorded demo script, for testing
     the WebSocket wiring without a DeepSeek key. Never used in live mode."""
+    if lang == "ar":
+        if any(w in user_text for w in ("تنظيف", "تنظيفاً")):
+            return (
+                "ممتاز، لتنظيف الأسنان لدي موعد غداً في الحادية عشرة صباحاً، "
+                "أو يوم السبت في الخامسة مساءً. أيهما يناسبك أكثر؟"
+            )
+        if "غداً" in user_text or "الحادية عشرة" in user_text:
+            return "ممتاز. هل يمكنني أخذ اسمك الكامل ورقم الواتساب الخاص بك، من فضلك؟"
+        return (
+            "مرحباً، شكراً لاتصالك بمركز الكندي للعيادات، أنا سارة، مساعدة "
+            "الحجز. كيف يمكنني مساعدتك اليوم؟ هل هو فحص، تنظيف، ألم في الأسنان، "
+            "أو علاج آخر؟"
+        )
     low = user_text.lower()
     if any(w in low for w in ("clean", "cleaning")):
         return (
@@ -119,7 +137,7 @@ def mock_reply(user_text: str, history: list) -> str:
 
 
 # --- LLM --------------------------------------------------------------------
-async def draft_response(messages: list) -> Any:
+async def draft_response(messages: list, lang: str = "en") -> Any:
     """Stream DeepSeek tokens (async generator of strings).
 
     In mock mode, yields a single canned reply instead.
@@ -127,7 +145,7 @@ async def draft_response(messages: list) -> Any:
     if MOCK_MODE:
         user_text = messages[-1]["content"] if messages else ""
         history = [m for m in messages if m["role"] == "user"]
-        yield mock_reply(user_text, history)
+        yield mock_reply(user_text, history, lang)
         return
 
     response = await litellm.acompletion(
@@ -160,11 +178,45 @@ async def health():
 @app.get("/twiml", response_class=PlainTextResponse)
 @app.post("/twiml", response_class=PlainTextResponse)
 async def twiml():
-    """Return the TwiML Twilio needs. Use this instead of a TwiML Bin
-    if you prefer: point the number's Voice webhook at
-    https://<your-ngrok-domain>/twiml . Otherwise use twiml-bin.xml
-    (same content) as a TwiML Bin in the Twilio Console."""
+    """Language menu, then Conversation Relay.
+
+    Twilio calls this when the call comes in. It asks the caller to
+    press 1 for English or 2 for Arabic, then hands the choice to
+    /choose-language, which returns the <ConversationRelay> TwiML.
+    No digit (or any other key) defaults to English.
+    Note: on a trial account the caller first hears Twilio's trial
+    message and must press any key before this TwiML is even fetched."""
+    host = PUBLIC_WS_URL.rsplit("/ws", 1)[0] if PUBLIC_WS_URL else ""
+    action = f"{host}/choose-language" if host else "/choose-language"
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        "<Response>\n"
+        '  <Gather numDigits="1" timeout="5" action="'
+        + action
+        + '" method="POST">\n'
+        '    <Say language="en-US">For English, press 1. For Arabic, press 2.</Say>\n'
+        '    <Say language="ar-SA">للغة العربية، اضغط 2. For English, press 1.</Say>\n'
+        "  </Gather>\n"
+        '  <Redirect method="POST">/choose-language</Redirect>\n'
+        "</Response>\n"
+    )
+
+
+def _relay_twiml(lang: str) -> str:
+    """<ConversationRelay> TwiML for the chosen language."""
     ws_url = PUBLIC_WS_URL or "wss://REPLACE-WITH-YOUR-NGROK-DOMAIN/ws"
+    if lang == "ar":
+        ws_url = ws_url.split("?")[0] + "?lang=ar"
+        return (
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            "<Response>\n"
+            "  <Connect>\n"
+            f'    <ConversationRelay url="{ws_url}" '
+            'language="ar-SA" interruptible="true" '
+            f'welcomeGreeting="{WELCOME_GREETING_AR}" />\n'
+            "  </Connect>\n"
+            "</Response>\n"
+        )
     return (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
         "<Response>\n"
@@ -177,12 +229,25 @@ async def twiml():
     )
 
 
+@app.post("/choose-language", response_class=PlainTextResponse)
+async def choose_language(request: Request, Digits: str = Form("")):
+    """Twilio posts the caller's keypress here. 2 = Arabic, anything
+    else (including no press) = English."""
+    lang = "ar" if (Digits or "").strip() == "2" else "en"
+    log.info("Language choice: digit=%r -> %s", Digits, lang)
+    return _relay_twiml(lang)
+
+
 # --- Conversation Relay WebSocket -------------------------------------------
 @app.websocket("/ws")
 async def conversation_relay(websocket: WebSocket):
     await websocket.accept()
-    log.info("Conversation Relay connected")
-    messages: list = [{"role": "system", "content": SARA_SYSTEM_PROMPT}]
+    lang = (websocket.query_params.get("lang") or "en").strip().lower()
+    if lang not in ("en", "ar"):
+        lang = "en"
+    log.info("Conversation Relay connected (lang=%s)", lang)
+    system_prompt = SARA_SYSTEM_PROMPT_AR if lang == "ar" else SARA_SYSTEM_PROMPT
+    messages: list = [{"role": "system", "content": system_prompt}]
     current_task: Optional[Any] = None
 
     async def send_text_stream(reply_tokens: Any):
@@ -224,7 +289,7 @@ async def conversation_relay(websocket: WebSocket):
                     current_task.cancel()
 
                 async def _respond():
-                    reply = await send_text_stream(draft_response(messages))
+                    reply = await send_text_stream(draft_response(messages, lang))
                     messages.append({"role": "assistant", "content": reply})
                     log.info("Sara: %s", reply)
 

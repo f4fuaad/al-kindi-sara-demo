@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: al-kindi-sara-demo
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn server:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DEEPSEEK_MODEL
+        value: deepseek/deepseek-flash
+      - key: TWILIO_PHONE_NUMBER
+        value: +12564188115
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      # Set AFTER the first deploy, once Render gives the service its
+      # public URL (e.g. https://al-kindi-sara-demo.onrender.com):
+      # PUBLIC_WS_URL=wss://al-kindi-sara-demo.onrender.com/ws
+      # Then restart / redeploy the service so /twiml picks it up.
+      - key: PUBLIC_WS_URL
+        sync: false

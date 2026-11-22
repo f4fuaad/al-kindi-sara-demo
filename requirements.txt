@@ -1,0 +1,7 @@
+fastapi>=0.110
+uvicorn[standard]>=0.29
+litellm>=1.60
+python-dotenv>=1.0
+# Test-only (used by test_server.py):
+httpx>=0.27
+pytest>=8.0

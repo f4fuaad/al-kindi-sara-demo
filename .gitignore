@@ -1,0 +1,12 @@
+# Secrets — never commit these
+.env
+
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Local tunnel / ngrok helpers (not part of the deploy)
+bin/
+.ngrok/

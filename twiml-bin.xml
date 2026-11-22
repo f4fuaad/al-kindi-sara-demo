@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- TwiML Bin for the Al Kindi demo.
+     1. In the Twilio Console, go to Develop > TwiML > TwiML Bins > Create new TwiML Bin.
+     2. Paste this whole file, replacing YOUR-PUBLIC-DOMAIN with your
+        public domain (Render: al-kindi-sara-demo.onrender.com;
+        ngrok: e.g. 03ca546a6a10.ngrok-free.app) — no https://, no trailing slash.
+     3. Save, then link your Twilio number to this bin (see README step 5).
+     The welcomeGreeting is spoken by Twilio as soon as the call connects. -->
+<Response>
+  <Connect>
+    <ConversationRelay url="wss://YOUR-PUBLIC-DOMAIN/ws"
+                       language="en-US"
+                       interruptible="true"
+                       welcomeGreeting="Hello, thank you for calling Al Kindi Clinics Center, this is Sara, your booking assistant. How can I help you today?" />
+  </Connect>
+</Response>
